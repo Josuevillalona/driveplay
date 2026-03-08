@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDriveService } = require('../drive');
+const { withRetry } = require('../retry');
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ router.get('/:fileId', async (req, res) => {
       driveRequestConfig.headers = { Range: rangeHeader };
     }
 
-    const response = await drive.files.get(options, driveRequestConfig);
+    const response = await withRetry(() => drive.files.get(options, driveRequestConfig));
 
     const headers = response.headers;
     if (headers['content-type']) res.set('Content-Type', headers['content-type']);
