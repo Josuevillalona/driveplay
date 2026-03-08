@@ -11,12 +11,14 @@ function parseStateParam(stateStr) {
 
     const state = JSON.parse(decoded);
 
-    if (!state.ids || !Array.isArray(state.ids) || state.ids.length === 0) {
+    const ids = state.ids || state.exportIds;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
       return null;
     }
 
     return {
-      fileId: state.ids[0],
+      fileId: ids[0],
       userId: state.userId || null,
     };
   } catch {

@@ -22,6 +22,17 @@ describe('parseStateParam', () => {
     expect(result.fileId).toBe('def456');
   });
 
+  it('extracts file ID from exportIds in valid state JSON (Google Workspace documents)', () => {
+    const state = JSON.stringify({
+      exportIds: ['xyz789'],
+      userId: 'user3',
+      action: 'open',
+    });
+    const result = parseStateParam(state);
+    expect(result.fileId).toBe('xyz789');
+    expect(result.userId).toBe('user3');
+  });
+
   it('returns null for missing ids', () => {
     const state = JSON.stringify({ userId: 'user1', action: 'open' });
     const result = parseStateParam(state);
