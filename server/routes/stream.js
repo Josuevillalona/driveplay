@@ -6,55 +6,70 @@ const router = express.Router();
 
 router.get('/:fileId', async (req, res) => {
   try {
-    // If a user email was passed (from impersonation flow), use it.
-    // Otherwise, use direct service account access.
     const subjectEmail = req.query.u || null;
     const drive = getDriveService(subjectEmail);
     const rangeHeader = req.headers.range;
 
-    console.log(`Stream request for file: ${req.params.fileId}, user: ${subjectEmail || 'SA direct'}, range: ${rangeHeader || 'none'}`);
-
-    const options = {
+    // First, get file metadata to know the MIME type and size.
+    // We need this because the googleapis stream response doesn't
+    // reliably return headers.
+    const { data: meta } = await drive.files.get({
       fileId: req.params.fileId,
-      alt: 'media',
+      fields: 'mimeType,size',
       supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-    };
+    });
 
-    const driveRequestConfig = {
-      responseType: 'stream',
-    };
+    const fileSize = parseInt(meta.size, 10);
+    const mimeType = meta.mimeType || 'video/mp4';
+
+    console.log(`Stream: file=${req.params.fileId}, mime=${mimeType}, size=${fileSize}, range=${rangeHeader || 'none'}`);
 
     if (rangeHeader) {
-      driveRequestConfig.headers = { Range: rangeHeader };
+      // Parse the range header: "bytes=START-END"
+      const parts = rangeHeader.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+
+      // Request just the byte range from Drive
+      const response = await withRetry(() =>
+        drive.files.get(
+          { fileId: req.params.fileId, alt: 'media', supportsAllDrives: true },
+          { responseType: 'stream', headers: { Range: `bytes=${start}-${end}` } }
+        )
+      );
+
+      res.status(206);
+      res.set({
+        'Content-Type': mimeType,
+        'Content-Length': chunkSize,
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+      });
+
+      response.data.pipe(res);
+    } else {
+      // Full file download (no range)
+      const response = await withRetry(() =>
+        drive.files.get(
+          { fileId: req.params.fileId, alt: 'media', supportsAllDrives: true },
+          { responseType: 'stream' }
+        )
+      );
+
+      res.status(200);
+      res.set({
+        'Content-Type': mimeType,
+        'Content-Length': fileSize,
+        'Accept-Ranges': 'bytes',
+      });
+
+      response.data.pipe(res);
     }
 
-    const response = await withRetry(() => drive.files.get(options, driveRequestConfig));
-
-    const headers = response.headers;
-    console.log('Drive API response headers:', JSON.stringify({
-      'content-type': headers['content-type'],
-      'content-length': headers['content-length'],
-      'content-range': headers['content-range'],
-      'accept-ranges': headers['accept-ranges'],
-    }));
-
-    // Always set Accept-Ranges so browser knows it can seek
-    res.set('Accept-Ranges', 'bytes');
-    if (headers['content-type']) res.set('Content-Type', headers['content-type']);
-    if (headers['content-length']) res.set('Content-Length', headers['content-length']);
-    if (headers['content-range']) res.set('Content-Range', headers['content-range']);
-
-    const status = headers['content-range'] ? 206 : 200;
-    res.status(status);
-
-    response.data.pipe(res);
-
-    response.data.on('error', (err) => {
-      console.error('Stream error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Stream failed' });
-      }
+    // Handle stream errors
+    res.on('close', () => {
+      // Client disconnected, nothing to do
     });
   } catch (err) {
     console.error('Drive stream error:', err.message);
