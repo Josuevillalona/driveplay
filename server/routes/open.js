@@ -12,8 +12,8 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    // Strategy 1: Try direct service account access first.
-    // This works when the SA is a member of the Shared Drive.
+    // Try direct service account access first (Shared Drive members).
+    // Falls back to admin impersonation if the SA can't access the file.
     let drive = getDriveService();
     let file;
     let userEmail = null;
@@ -26,16 +26,9 @@ router.get('/', async (req, res) => {
         includeItemsFromAllDrives: true,
       });
       file = result.data;
-      console.log(`Direct SA access succeeded for file: ${file.name}`);
     } catch (directErr) {
-      console.log(`Direct SA access failed: ${directErr.message}. Trying impersonation...`);
-
-      // Strategy 2: Impersonate the admin user as fallback.
-      // This works for any file the admin has access to.
       const adminEmail = process.env.GOOGLE_ADMIN_EMAIL;
-      if (!adminEmail) {
-        throw new Error('File not accessible. GOOGLE_ADMIN_EMAIL not set for fallback.');
-      }
+      if (!adminEmail) throw directErr;
 
       userEmail = adminEmail;
       drive = getDriveService(adminEmail);
@@ -46,7 +39,6 @@ router.get('/', async (req, res) => {
         includeItemsFromAllDrives: true,
       });
       file = result.data;
-      console.log(`Impersonation access succeeded for file: ${file.name} (as ${adminEmail})`);
     }
 
     const html = renderPlayerHTML({
@@ -59,6 +51,16 @@ router.get('/', async (req, res) => {
 
     res.type('html').send(html);
   } catch (err) {
+    const code = err.code || 500;
+    if (code === 404) {
+      return res.status(404).json({ error: 'File not found or not accessible' });
+    }
+    if (code === 403) {
+      return res.status(403).json({ error: 'Permission denied for this file' });
+    }
+    if (code === 401) {
+      return res.status(401).json({ error: 'Authentication error. Check service account credentials.' });
+    }
     console.error('Error opening file:', err.message);
     res.status(500).json({ error: 'Failed to load file' });
   }
