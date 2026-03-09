@@ -32,10 +32,18 @@ router.get('/:fileId', async (req, res) => {
     const response = await withRetry(() => drive.files.get(options, driveRequestConfig));
 
     const headers = response.headers;
+    console.log('Drive API response headers:', JSON.stringify({
+      'content-type': headers['content-type'],
+      'content-length': headers['content-length'],
+      'content-range': headers['content-range'],
+      'accept-ranges': headers['accept-ranges'],
+    }));
+
+    // Always set Accept-Ranges so browser knows it can seek
+    res.set('Accept-Ranges', 'bytes');
     if (headers['content-type']) res.set('Content-Type', headers['content-type']);
     if (headers['content-length']) res.set('Content-Length', headers['content-length']);
     if (headers['content-range']) res.set('Content-Range', headers['content-range']);
-    if (headers['accept-ranges']) res.set('Accept-Ranges', headers['accept-ranges']);
 
     const status = headers['content-range'] ? 206 : 200;
     res.status(status);
