@@ -2,7 +2,6 @@ const express = require('express');
 const { parseStateParam } = require('../state');
 const { getDriveService } = require('../drive');
 const { renderPlayerHTML } = require('../player');
-const { getUserEmail } = require('../userLookup');
 
 const router = express.Router();
 
@@ -13,32 +12,49 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    // Resolve the numeric userId to an email, then impersonate that user.
-    // This way, each user's own Drive permissions are respected.
-    let subjectEmail = null;
-    if (parsed.userId) {
-      subjectEmail = await getUserEmail(parsed.userId);
-    }
+    // Strategy 1: Try direct service account access first.
+    // This works when the SA is a member of the Shared Drive.
+    let drive = getDriveService();
+    let file;
+    let userEmail = null;
 
-    // Fallback: if we can't resolve the userId, try the admin email
-    if (!subjectEmail) {
-      subjectEmail = process.env.GOOGLE_ADMIN_EMAIL;
-      console.warn('Could not resolve userId; falling back to GOOGLE_ADMIN_EMAIL for impersonation.');
-    }
+    try {
+      const result = await drive.files.get({
+        fileId: parsed.fileId,
+        fields: 'id,name,mimeType,size',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      file = result.data;
+      console.log(`Direct SA access succeeded for file: ${file.name}`);
+    } catch (directErr) {
+      console.log(`Direct SA access failed: ${directErr.message}. Trying impersonation...`);
 
-    const drive = getDriveService(subjectEmail);
-    const { data: file } = await drive.files.get({
-      fileId: parsed.fileId,
-      fields: 'id,name,mimeType,size',
-      supportsAllDrives: true,
-    });
+      // Strategy 2: Impersonate the admin user as fallback.
+      // This works for any file the admin has access to.
+      const adminEmail = process.env.GOOGLE_ADMIN_EMAIL;
+      if (!adminEmail) {
+        throw new Error('File not accessible. GOOGLE_ADMIN_EMAIL not set for fallback.');
+      }
+
+      userEmail = adminEmail;
+      drive = getDriveService(adminEmail);
+      const result = await drive.files.get({
+        fileId: parsed.fileId,
+        fields: 'id,name,mimeType,size',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      file = result.data;
+      console.log(`Impersonation access succeeded for file: ${file.name} (as ${adminEmail})`);
+    }
 
     const html = renderPlayerHTML({
       fileId: file.id,
       fileName: file.name,
       mimeType: file.mimeType,
       fileSize: file.size,
-      userEmail: subjectEmail,
+      userEmail,
     });
 
     res.type('html').send(html);

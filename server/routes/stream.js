@@ -6,10 +6,9 @@ const router = express.Router();
 
 router.get('/:fileId', async (req, res) => {
   try {
-    // The user email is passed as a query param from the player page.
-    // This allows us to impersonate the actual user who clicked "Open With".
-    const subjectEmail = req.query.u || process.env.GOOGLE_ADMIN_EMAIL;
-
+    // If a user email was passed (from impersonation flow), use it.
+    // Otherwise, use direct service account access.
+    const subjectEmail = req.query.u || null;
     const drive = getDriveService(subjectEmail);
     const rangeHeader = req.headers.range;
 
