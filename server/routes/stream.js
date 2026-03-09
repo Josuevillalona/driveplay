@@ -12,10 +12,13 @@ router.get('/:fileId', async (req, res) => {
     const drive = getDriveService(subjectEmail);
     const rangeHeader = req.headers.range;
 
+    console.log(`Stream request for file: ${req.params.fileId}, user: ${subjectEmail || 'SA direct'}, range: ${rangeHeader || 'none'}`);
+
     const options = {
       fileId: req.params.fileId,
       alt: 'media',
       supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     };
 
     const driveRequestConfig = {
