@@ -2,6 +2,7 @@ const express = require('express');
 const { parseStateParam } = require('../state');
 const { getDriveService } = require('../drive');
 const { renderPlayerHTML } = require('../player');
+const { getUserEmail } = require('../userLookup');
 
 const router = express.Router();
 
@@ -12,15 +13,17 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    // We cannot immediately impersonate because the state param only gives us a numeric 'userId'.
-    // However, since we authorized the Domain-Wide delegation, we need to pass a valid subject email.
-    // For MVP, we will require the admin to set a GOOGLE_IMPERSONATE_EMAIL in their environment
-    // variables which will be a super-user/admin email that has access to the Shared Drives.
-    const config = require('../config');
-    const subjectEmail = process.env.GOOGLE_IMPERSONATE_EMAIL;
+    // Resolve the numeric userId to an email, then impersonate that user.
+    // This way, each user's own Drive permissions are respected.
+    let subjectEmail = null;
+    if (parsed.userId) {
+      subjectEmail = await getUserEmail(parsed.userId);
+    }
 
+    // Fallback: if we can't resolve the userId, try the admin email
     if (!subjectEmail) {
-      console.warn('GOOGLE_IMPERSONATE_EMAIL not set. Falling back to default service account access.');
+      subjectEmail = process.env.GOOGLE_ADMIN_EMAIL;
+      console.warn('Could not resolve userId; falling back to GOOGLE_ADMIN_EMAIL for impersonation.');
     }
 
     const drive = getDriveService(subjectEmail);
@@ -35,6 +38,7 @@ router.get('/', async (req, res) => {
       fileName: file.name,
       mimeType: file.mimeType,
       fileSize: file.size,
+      userEmail: subjectEmail,
     });
 
     res.type('html').send(html);

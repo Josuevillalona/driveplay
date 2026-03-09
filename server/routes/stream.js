@@ -6,7 +6,11 @@ const router = express.Router();
 
 router.get('/:fileId', async (req, res) => {
   try {
-    const drive = getDriveService();
+    // The user email is passed as a query param from the player page.
+    // This allows us to impersonate the actual user who clicked "Open With".
+    const subjectEmail = req.query.u || process.env.GOOGLE_ADMIN_EMAIL;
+
+    const drive = getDriveService(subjectEmail);
     const rangeHeader = req.headers.range;
 
     const options = {

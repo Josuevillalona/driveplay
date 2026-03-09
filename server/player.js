@@ -1,5 +1,8 @@
-function renderPlayerHTML({ fileId, fileName, mimeType, fileSize }) {
+function renderPlayerHTML({ fileId, fileName, mimeType, fileSize, userEmail }) {
   const sizeMB = fileSize ? (parseInt(fileSize, 10) / (1024 * 1024)).toFixed(1) : 'Unknown';
+  const streamUrl = userEmail
+    ? `/api/stream/${encodeURIComponent(fileId)}?u=${encodeURIComponent(userEmail)}`
+    : `/api/stream/${encodeURIComponent(fileId)}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -64,7 +67,7 @@ function renderPlayerHTML({ fileId, fileName, mimeType, fileSize }) {
   </div>
   <div class="player-container">
     <video id="player" controls crossorigin playsinline>
-      <source src="/api/stream/${encodeURIComponent(fileId)}" type="${escapeHtml(mimeType)}" />
+      <source src="${streamUrl}" type="${escapeHtml(mimeType)}" />
     </video>
   </div>
   <div class="error-message" id="error">
