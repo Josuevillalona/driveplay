@@ -10,7 +10,7 @@ async function generateThumbnailBase64(fileId) {
     const drive = getDriveService();
 
     // Get an access token we can pass directly to ffmpeg
-    const authClient = await drive.context._options.auth.getClient();
+    const authClient = drive.context._options.auth;
     const { token } = await authClient.getAccessToken();
 
     const videoUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`;
