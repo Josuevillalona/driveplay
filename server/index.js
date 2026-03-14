@@ -29,12 +29,21 @@ if (require.main === module) {
     if (config.sharedDriveId) {
       console.log('Automated thumbnail generation scheduled internally using setInterval (60m).');
 
-      const runThumbnailJob = async () => {
+      const runThumbnailJob = () => {
         try {
-          const fetch = require('node-fetch') || fetch; // Use global fetch if available (Node 18+)
-          await fetch(`http://localhost:${config.port}/api/jobs/thumbnails`, { method: 'POST' });
+          const http = require('http');
+          const req = http.request({
+            host: 'localhost',
+            port: config.port,
+            path: '/api/jobs/thumbnails',
+            method: 'POST'
+          }, (res) => {
+            console.log(`Internal cron started job - Status: ${res.statusCode}`);
+          });
+          req.on('error', (err) => console.error('Failed to trigger internal thumbnail job:', err.message));
+          req.end();
         } catch (err) {
-          console.error('Failed to trigger internal thumbnail job:', err.message);
+          console.error('Failed to execute internal thumbnail request:', err.message);
         }
       };
 
