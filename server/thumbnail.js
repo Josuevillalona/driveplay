@@ -23,11 +23,11 @@ async function generateThumbnailBase64(fileId) {
         const chunks = [];
 
         outStream.on('data', chunk => chunks.push(chunk));
+
+        let fileBufferBase64 = null;
         outStream.on('end', () => {
             const buffer = Buffer.concat(chunks);
-            const base64 = buffer.toString('base64');
-            // Format as URL-safe base64 string
-            resolve(base64);
+            fileBufferBase64 = buffer.toString('base64');
         });
         outStream.on('error', reject);
 
@@ -48,10 +48,17 @@ async function generateThumbnailBase64(fileId) {
             .outputOptions(['-vcodec png'])
             .on('error', (err) => {
                 console.error(`FFmpeg error for ${fileId}:`, err.message);
+                clearTimeout(killTimer);
                 reject(err);
             })
             .on('end', () => {
                 console.log(`FFmpeg finished for ${fileId}.`);
+                clearTimeout(killTimer);
+                if (fileBufferBase64) {
+                    resolve(fileBufferBase64);
+                } else {
+                    reject(new Error('FFmpeg finished but no frame data was captured'));
+                }
             });
 
         // Manual 45-second timeout to kill the FFmpeg process if the Google Drive stream hangs
@@ -60,10 +67,6 @@ async function generateThumbnailBase64(fileId) {
             command.kill('SIGKILL'); // Force kill the ffmpeg process
             reject(new Error('FFmpeg processing timed out after 45 seconds'));
         }, 45000);
-
-        // Clear the timeout if the stream finishes normally or errors out early
-        outStream.on('finish', () => clearTimeout(killTimer));
-        outStream.on('error', () => clearTimeout(killTimer));
 
         command.pipe(outStream, { end: true });
     });
