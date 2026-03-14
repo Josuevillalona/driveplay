@@ -33,7 +33,7 @@ async function generateThumbnailBase64(fileId) {
 
         // Provide the Google Drive URL to ffmpeg, passing the auth token to headers.
         // This allows ffmpeg to intelligently seek via HTTP Range requests without downloading the massive file.
-        ffmpeg(videoUrl)
+        const command = ffmpeg(videoUrl)
             .inputOptions([
                 '-headers', `Authorization: Bearer ${token}\r\n`
             ])
@@ -52,8 +52,11 @@ async function generateThumbnailBase64(fileId) {
             })
             .on('end', () => {
                 console.log(`FFmpeg finished for ${fileId}.`);
-            })
-            .pipe(outStream, { end: true });
+            });
+
+        // Add a 45-second timeout so a stuck Google Drive stream doesn't hang the Node process permanently
+        command.timeout(45);
+        command.pipe(outStream, { end: true });
     });
 }
 
