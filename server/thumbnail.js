@@ -54,8 +54,17 @@ async function generateThumbnailBase64(fileId) {
                 console.log(`FFmpeg finished for ${fileId}.`);
             });
 
-        // Add a 45-second timeout so a stuck Google Drive stream doesn't hang the Node process permanently
-        command.timeout(45);
+        // Manual 45-second timeout to kill the FFmpeg process if the Google Drive stream hangs
+        const killTimer = setTimeout(() => {
+            console.error(`FFmpeg process timed out for ${fileId}`);
+            command.kill('SIGKILL'); // Force kill the ffmpeg process
+            reject(new Error('FFmpeg processing timed out after 45 seconds'));
+        }, 45000);
+
+        // Clear the timeout if the stream finishes normally or errors out early
+        outStream.on('finish', () => clearTimeout(killTimer));
+        outStream.on('error', () => clearTimeout(killTimer));
+
         command.pipe(outStream, { end: true });
     });
 }
