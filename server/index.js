@@ -5,12 +5,15 @@ const fileRoutes = require('./routes/file');
 const streamRoutes = require('./routes/stream');
 const openRoutes = require('./routes/open');
 
+const jobsRoutes = require('./routes/jobs');
+
 const app = express();
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.use('/api/file', fileRoutes);
 app.use('/api/stream', streamRoutes);
+app.use('/api/jobs', jobsRoutes);
 app.use('/open', openRoutes);
 
 app.get('/health', (req, res) => {
