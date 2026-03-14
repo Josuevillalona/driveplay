@@ -43,8 +43,8 @@ async function generateThumbnailBase64(fileId) {
             .inputOptions([
                 '-headers', `Authorization: Bearer ${token}\r\n`
             ])
-            // Seek 5 seconds into the video. Format can be a simple number.
-            .seekInput(5)
+            // Seek 1 second into the video (lowered from 5s to avoid errors on short clips).
+            .seekInput(1)
             // We only want to process 1 frame
             .frames(1)
             // Resize to a thumbnail-friendly size, keeping aspect ratio
