@@ -24,12 +24,18 @@ async function generateThumbnailBase64(fileId) {
 
         outStream.on('data', chunk => chunks.push(chunk));
 
-        let fileBufferBase64 = null;
         outStream.on('end', () => {
+            clearTimeout(killTimer);
+            if (chunks.length === 0) {
+                return reject(new Error('Stream ended but no frame data was captured'));
+            }
             const buffer = Buffer.concat(chunks);
-            fileBufferBase64 = buffer.toString('base64');
+            resolve(buffer.toString('base64'));
         });
-        outStream.on('error', reject);
+        outStream.on('error', (err) => {
+            clearTimeout(killTimer);
+            reject(err);
+        });
 
         // Provide the Google Drive URL to ffmpeg, passing the auth token to headers.
         // This allows ffmpeg to intelligently seek via HTTP Range requests without downloading the massive file.
@@ -52,13 +58,7 @@ async function generateThumbnailBase64(fileId) {
                 reject(err);
             })
             .on('end', () => {
-                console.log(`FFmpeg finished for ${fileId}.`);
-                clearTimeout(killTimer);
-                if (fileBufferBase64) {
-                    resolve(fileBufferBase64);
-                } else {
-                    reject(new Error('FFmpeg finished but no frame data was captured'));
-                }
+                console.log(`FFmpeg command completed for ${fileId}, waiting for stream closure...`);
             });
 
         // Manual 45-second timeout to kill the FFmpeg process if the Google Drive stream hangs
