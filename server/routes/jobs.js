@@ -51,8 +51,8 @@ router.post('/thumbnails', async (req, res) => {
 
         // Process sequentially to avoid memory overload from concurrent ffmpeg processes
         for (const file of allVideos) {
-            if (file.hasThumbnail && file.contentHints?.thumbnail) {
-                // Skip files that already have a thumbnail to save processing
+            if (file.hasThumbnail) {
+                // Skip files that already have a thumbnail (Google's native one or our custom one)
                 jobStatus.skipped++;
                 continue;
             }
