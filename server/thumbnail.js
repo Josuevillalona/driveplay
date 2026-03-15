@@ -51,7 +51,10 @@ async function generateThumbnailBase64(fileId) {
             .size('640x?')
             // Output to PNG format on a pipe
             .format('image2pipe')
-            .outputOptions(['-vcodec png'])
+            .outputOptions([
+                '-vcodec png',
+                '-threads 1' // Limit CPU threads to 1 to drastically lower RAM usage and prevent Render OOM crashes
+            ])
             .on('error', (err) => {
                 console.error(`FFmpeg error for ${fileId}:`, err.message);
                 clearTimeout(killTimer);
