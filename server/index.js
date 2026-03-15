@@ -38,8 +38,8 @@ if (require.main === module) {
         }
       };
 
-      // Run it immediately upon boot to begin processing instantly
-      runThumbnailJob();
+      // Run it 5 seconds after boot to allow the container's external network to initialize
+      setTimeout(runThumbnailJob, 5000);
 
       // Then run it every hour
       setInterval(runThumbnailJob, 60 * 60 * 1000);
