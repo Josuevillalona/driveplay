@@ -1,18 +1,128 @@
 const ffmpeg = require('fluent-ffmpeg');
 const { getDriveService } = require('./drive');
 const stream = require('stream');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 /**
- * Generates a thumbnail for a given Drive video file.
- * Returns a Base64-encoded PNG string.
+ * Downloads a file from Drive directly to the server's local disk.
+ */
+async function downloadFileToDisk(fileId) {
+    const drive = getDriveService();
+    const tempFilePath = path.join(os.tmpdir(), `${fileId}.mp4`);
+    
+    // Check if it already exists from a previous crash and delete it
+    if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+    }
+
+    const dest = fs.createWriteStream(tempFilePath);
+    const res = await drive.files.get(
+        { fileId, alt: 'media', supportsAllDrives: true },
+        { responseType: 'stream' }
+    );
+
+    return new Promise((resolve, reject) => {
+        res.data
+            .on('end', () => resolve(tempFilePath))
+            .on('error', err => reject(err))
+            .pipe(dest);
+    });
+}
+
+/**
+ * Phase 2: Guaranteed local disk extraction using FFmpeg natively.
+ */
+async function generateThumbnailBase64Disk(tempFilePath, fileId) {
+    return new Promise((resolve, reject) => {
+        const outStream = new stream.PassThrough();
+        const chunks = [];
+
+        outStream.on('data', chunk => chunks.push(chunk));
+        outStream.on('end', () => {
+            clearTimeout(killTimer);
+            if (chunks.length === 0) {
+                return reject(new Error('Disk Extraction: Stream ended but no frame data was captured'));
+            }
+            const buffer = Buffer.concat(chunks);
+            resolve(buffer.toString('base64'));
+        });
+        outStream.on('error', (err) => {
+            clearTimeout(killTimer);
+            reject(err);
+        });
+
+        const command = ffmpeg(tempFilePath)
+            .seekInput(1)
+            .frames(1)
+            .size('640x?')
+            .format('image2pipe')
+            .outputOptions([
+                '-vcodec png',
+                '-threads 1' // Still limit threads to keep background profile low
+            ])
+            .on('error', (err) => {
+                console.error(`[Disk] FFmpeg error for ${fileId}:`, err.message);
+                clearTimeout(killTimer);
+                reject(err);
+            })
+            .on('end', () => {
+                console.log(`[Disk] FFmpeg command completed for ${fileId}`);
+            });
+
+        // 60-second timeout for local processing
+        const killTimer = setTimeout(() => {
+            console.error(`[Disk] FFmpeg process timed out for ${fileId}`);
+            command.kill('SIGKILL');
+            reject(new Error('Disk FFmpeg processing timed out after 60 seconds'));
+        }, 60000);
+
+        command.pipe(outStream, { end: true });
+    });
+}
+
+/**
+ * Master Orchestrator: Try Stream first, fallback to Disk.
  */
 async function generateThumbnailBase64(fileId) {
     const drive = getDriveService();
-
-    // Get an access token we can pass directly to ffmpeg
     const authClient = drive.context._options.auth;
     const { token } = await authClient.getAccessToken();
 
+    try {
+        console.log(`[Phase 1] Attempting fast HTTP stream extraction for ${fileId}...`);
+        const base64 = await generateThumbnailBase64Stream(fileId, token);
+        return base64;
+    } catch (streamErr) {
+        console.log(`[Phase 1 Failed] Stream extraction failed for ${fileId}: ${streamErr.message}`);
+        console.log(`[Phase 2] Falling back to Guaranteed Disk Extraction for ${fileId}...`);
+        
+        let tempFilePath = null;
+        try {
+            console.log(`[Disk] Downloading ${fileId} directly to local storage...`);
+            tempFilePath = await downloadFileToDisk(fileId);
+            
+            console.log(`[Disk] Extracting frame natively from ${tempFilePath}...`);
+            const base64 = await generateThumbnailBase64Disk(tempFilePath, fileId);
+            return base64;
+        } catch (diskErr) {
+            console.error(`[Phase 2 Failed] Disk extraction totally failed for ${fileId}:`, diskErr.message);
+            throw diskErr;
+        } finally {
+            if (tempFilePath && fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+                console.log(`[Disk] Cleaned up temporary file ${tempFilePath}`);
+            }
+        }
+    }
+}
+
+/**
+ * Phase 1: Attempt to stream the file using strict HTTP ranges.
+ * This is fast and uses zero disk space, but fails on large files with late MOOV atoms.
+ */
+async function generateThumbnailBase64Stream(fileId, token) {
     const videoUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`;
 
     return new Promise((resolve, reject) => {
