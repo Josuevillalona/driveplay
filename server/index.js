@@ -38,8 +38,8 @@ if (require.main === module) {
         }
       };
 
-      // Run it 10 seconds after boot to process anything recent
-      setTimeout(runThumbnailJob, 10000);
+      // Run it immediately upon boot to begin processing instantly
+      runThumbnailJob();
 
       // Then run it every hour
       setInterval(runThumbnailJob, 60 * 60 * 1000);
