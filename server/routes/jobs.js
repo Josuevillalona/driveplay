@@ -63,8 +63,9 @@ async function startThumbnailBatch() {
                     await uploadThumbnailToDrive(file.id, base64Data);
                     jobStatus.processed++;
 
-                    // Tiny 100ms breather to prevent locking the Node.js event loop
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    // Throttle: Wait 5 seconds before the next video.
+                    // This gives the CPU time to breathe and serve actual requested video streams.
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                 } catch (err) {
                     console.error(`Failed to generate/upload thumbnail for ${file.id}:`, err.message);
                     jobStatus.errors++;
