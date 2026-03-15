@@ -31,17 +31,8 @@ if (require.main === module) {
 
       const runThumbnailJob = () => {
         try {
-          const http = require('http');
-          const req = http.request({
-            host: 'localhost',
-            port: config.port,
-            path: '/api/jobs/thumbnails',
-            method: 'POST'
-          }, (res) => {
-            console.log(`Internal cron started job - Status: ${res.statusCode}`);
-          });
-          req.on('error', (err) => console.error('Failed to trigger internal thumbnail job:', err.message));
-          req.end();
+          console.log(`Internal cron starting job directly via JS function...`);
+          jobsRoutes.startThumbnailBatch();
         } catch (err) {
           console.error('Failed to execute internal thumbnail request:', err.message);
         }

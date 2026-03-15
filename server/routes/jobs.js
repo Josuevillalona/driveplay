@@ -9,19 +9,21 @@ const router = express.Router();
 let isJobRunning = false;
 let jobStatus = { processed: 0, errors: 0, skipped: 0, total: 0 };
 
-router.post('/thumbnails', async (req, res) => {
+async function startThumbnailBatch() {
     if (isJobRunning) {
-        return res.status(409).json({ error: 'Thumbnail job is already running', status: jobStatus });
+        console.log('Thumbnail job is already running, skipping start request.');
+        return;
     }
 
     const driveId = config.sharedDriveId;
     if (!driveId) {
-        return res.status(500).json({ error: 'SHARED_DRIVE_ID is not configured in environment parameters' });
+        console.error('SHARED_DRIVE_ID is not configured in environment parameters');
+        return;
     }
 
     isJobRunning = true;
     jobStatus = { processed: 0, errors: 0, skipped: 0, total: 0 };
-    res.json({ message: 'Thumbnail batch job started', driveId });
+    console.log('Thumbnail batch job started internally.');
 
     try {
         const drive = getDriveService();
@@ -79,10 +81,26 @@ router.post('/thumbnails', async (req, res) => {
     } finally {
         isJobRunning = false;
     }
+}
+
+router.post('/thumbnails', (req, res) => {
+    if (isJobRunning) {
+        return res.status(409).json({ error: 'Thumbnail job is already running', status: jobStatus });
+    }
+
+    const driveId = config.sharedDriveId;
+    if (!driveId) {
+        return res.status(500).json({ error: 'SHARED_DRIVE_ID is not configured in environment parameters' });
+    }
+
+    startThumbnailBatch(); // Fire and forget
+    
+    res.json({ message: 'Thumbnail batch job started', driveId });
 });
 
 router.get('/thumbnails/status', (req, res) => {
     res.json({ isJobRunning, status: jobStatus });
 });
 
+router.startThumbnailBatch = startThumbnailBatch;
 module.exports = router;
