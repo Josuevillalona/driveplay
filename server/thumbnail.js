@@ -42,10 +42,10 @@ async function generateThumbnailBase64(fileId) {
         const command = ffmpeg(videoUrl)
             .inputOptions([
                 '-headers', `Authorization: Bearer ${token}\r\n`,
-                '-probesize', '500M',     // Limit scanning to 500MB
-                '-analyzeduration', '1000M' // Generous buffer for large files with late MOOV atoms
+                '-probesize', '50M',     // Limit scanning to 50MB to prevent buffering OOM
+                '-analyzeduration', '100M' // Don't buffer entire giant files into memory if MOOV atom is late
             ])
-            // Seek 1 second into the video (lowered from 5s to avoid errors on short clips).
+            // Seek 1 second into the video
             .seekInput(1)
             // We only want to process 1 frame
             .frames(1)
@@ -54,7 +54,8 @@ async function generateThumbnailBase64(fileId) {
             // Output to PNG format on a pipe
             .format('image2pipe')
             .outputOptions([
-                '-vcodec png'
+                '-vcodec png',
+                '-threads 1' // Limit CPU threads to 1 to drastically lower RAM usage and prevent Container OOM crashes
             ])
             .on('error', (err) => {
                 console.error(`FFmpeg error for ${fileId}:`, err.message);
