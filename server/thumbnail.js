@@ -10,8 +10,12 @@ const path = require('path');
  */
 async function downloadFileToDisk(fileId) {
     const drive = getDriveService();
-    const tempFilePath = path.join(os.tmpdir(), `${fileId}.mp4`);
-    
+    // Create a dedicated local folder on the physical SSD to bypass /tmp RAM limits
+    const downloadDir = path.join(__dirname, 'downloads');
+    if (!fs.existsSync(downloadDir)) {
+        fs.mkdirSync(downloadDir, { recursive: true });
+    }
+    const tempFilePath = path.join(downloadDir, `${fileId}.mp4`);
     // Check if it already exists from a previous crash and delete it
     if (fs.existsSync(tempFilePath)) {
         fs.unlinkSync(tempFilePath);
