@@ -73,6 +73,8 @@ async function startThumbnailBatch() {
             const priorityResult = await drive.files.list(priorityOptions);
             for (const file of priorityResult.data.files) {
                 jobStatus.total++;
+                // Skip macOS resource fork sidecar files (._filename) - they contain no video data
+                if (file.name.startsWith('._')) { jobStatus.skipped++; continue; }
                 if (file.hasThumbnail) { jobStatus.skipped++; continue; }
                 console.log(`[Priority] Processing: ${file.name} (ID: ${file.id})`);
                 await processFileWithRetry(file);
@@ -102,7 +104,13 @@ async function startThumbnailBatch() {
             const videos = result.data.files;
 
             for (const file of videos) {
-                jobStatus.total++; // We count total as we go now since we aren't loading all upfront
+                jobStatus.total++;
+
+                // Skip macOS resource fork sidecar files (._filename) - they contain no video data
+                if (file.name.startsWith('._')) {
+                    jobStatus.skipped++;
+                    continue;
+                }
 
                 if (file.hasThumbnail) {
                     // Skip files that already have a thumbnail (Google's native one or our custom one)

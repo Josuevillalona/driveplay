@@ -89,12 +89,12 @@ async function generateThumbnailBase64Disk(tempFilePath, fileId) {
                 console.log(`[Disk] FFmpeg command completed for ${fileId}`);
             });
 
-        // 60-second timeout for local processing
+        // 5-minute timeout for local processing (large 1080p files can take a long time)
         const killTimer = setTimeout(() => {
             console.error(`[Disk] FFmpeg process timed out for ${fileId}`);
             command.kill('SIGKILL');
-            reject(new Error('Disk FFmpeg processing timed out after 60 seconds'));
-        }, 60000);
+            reject(new Error('Disk FFmpeg processing timed out after 300 seconds'));
+        }, 300000);
 
         command.pipe(outStream, { end: true });
     });
