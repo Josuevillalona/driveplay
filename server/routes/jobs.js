@@ -25,13 +25,66 @@ async function startThumbnailBatch() {
     jobStatus = { processed: 0, errors: 0, skipped: 0, total: 0 };
     console.log('Thumbnail batch job started internally.');
 
+    // Priority folder: process this folder first before the full drive scan
+    const PRIORITY_FOLDER_ID = '1t_jrHabkVTR2tc_e63wAIo2JS_02Vt6n'; // "2025 - figure out issues?"
+
+    // Helper function to encapsulate file processing with retry logic
+    async function processFileWithRetry(file) {
+        let success = false;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                const base64Data = await generateThumbnailBase64(file.id);
+                await uploadThumbnailToDrive(file.id, base64Data);
+                jobStatus.processed++;
+                success = true;
+
+                // Tiny 100ms breather to prevent locking the Node.js event loop
+                await new Promise(resolve => setTimeout(resolve, 100));
+                break; // success, stop retrying
+            } catch (err) {
+                if (err.isQuotaError && attempt < 3) {
+                    console.warn(`[Quota] Hit downloadQuotaExceeded for ${file.id}. Waiting 60s before retry (attempt ${attempt}/3)...`);
+                    await new Promise(resolve => setTimeout(resolve, 60000));
+                } else {
+                    console.error(`Failed to generate/upload thumbnail for ${file.id} (attempt ${attempt}):`, err.message);
+                    if (attempt === 3) jobStatus.errors++;
+                }
+            }
+        }
+    }
+
     try {
         const drive = getDriveService();
 
-        // Query to find all video files in the specified shared drive
+        // ---- PRIORITY PASS: Process the priority folder first ----
+        console.log(`[Priority] Scanning priority folder first (ID: ${PRIORITY_FOLDER_ID})...`);
+        let priorityPageToken;
+        do {
+            const priorityOptions = {
+                q: `mimeType contains 'video/' and '${PRIORITY_FOLDER_ID}' in parents`,
+                corpora: 'drive',
+                driveId: driveId,
+                supportsAllDrives: true,
+                includeItemsFromAllDrives: true,
+                fields: 'nextPageToken, files(id, name, hasThumbnail)',
+                pageSize: 100,
+                ...(priorityPageToken ? { pageToken: priorityPageToken } : {})
+            };
+            const priorityResult = await drive.files.list(priorityOptions);
+            for (const file of priorityResult.data.files) {
+                jobStatus.total++;
+                if (file.hasThumbnail) { jobStatus.skipped++; continue; }
+                console.log(`[Priority] Processing: ${file.name} (ID: ${file.id})`);
+                await processFileWithRetry(file);
+            }
+            priorityPageToken = priorityResult.data.nextPageToken;
+        } while (priorityPageToken);
+        console.log(`[Priority] Priority folder complete. Moving to full drive scan...`);
+
+        // ---- FULL SCAN: Process remaining drive files ----
         let pageToken;
         let queryOptions = {
-            q: "mimeType contains 'video/'",
+            q: `mimeType contains 'video/' and not '${PRIORITY_FOLDER_ID}' in parents`,
             corpora: 'drive',
             driveId: driveId,
             supportsAllDrives: true,
@@ -58,27 +111,7 @@ async function startThumbnailBatch() {
                 }
 
                 console.log(`Processing file: ${file.name} (ID: ${file.id})`);
-                let success = false;
-                for (let attempt = 1; attempt <= 3; attempt++) {
-                    try {
-                        const base64Data = await generateThumbnailBase64(file.id);
-                        await uploadThumbnailToDrive(file.id, base64Data);
-                        jobStatus.processed++;
-                        success = true;
-
-                        // Tiny 100ms breather to prevent locking the Node.js event loop
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        break; // success, stop retrying
-                    } catch (err) {
-                        if (err.isQuotaError && attempt < 3) {
-                            console.warn(`[Quota] Hit downloadQuotaExceeded for ${file.id}. Waiting 60s before retry (attempt ${attempt}/3)...`);
-                            await new Promise(resolve => setTimeout(resolve, 60000));
-                        } else {
-                            console.error(`Failed to generate/upload thumbnail for ${file.id} (attempt ${attempt}):`, err.message);
-                            if (attempt === 3) jobStatus.errors++;
-                        }
-                    }
-                }
+                await processFileWithRetry(file);
             }
             pageToken = result.data.nextPageToken;
         } while (pageToken);
