@@ -56,32 +56,69 @@ async function startThumbnailBatch() {
     try {
         const drive = getDriveService();
 
-        // ---- PRIORITY PASS: Process the priority folder first ----
-        console.log(`[Priority] Scanning priority folder first (ID: ${PRIORITY_FOLDER_ID})...`);
-        let priorityPageToken;
-        do {
-            const priorityOptions = {
-                q: `mimeType contains 'video/' and '${PRIORITY_FOLDER_ID}' in parents`,
-                corpora: 'drive',
-                driveId: driveId,
-                supportsAllDrives: true,
-                includeItemsFromAllDrives: true,
-                fields: 'nextPageToken, files(id, name, hasThumbnail)',
-                pageSize: 100,
-                ...(priorityPageToken ? { pageToken: priorityPageToken } : {})
-            };
-            const priorityResult = await drive.files.list(priorityOptions);
-            for (const file of priorityResult.data.files) {
-                jobStatus.total++;
-                // Skip macOS resource fork sidecar files (._filename) - they contain no video data
-                if (file.name.startsWith('._')) { jobStatus.skipped++; continue; }
-                if (file.hasThumbnail) { jobStatus.skipped++; continue; }
-                console.log(`[Priority] Processing: ${file.name} (ID: ${file.id})`);
-                await processFileWithRetry(file);
+        // ---- PRIORITY PASS: Recursively process the priority folder tree ----
+        console.log(`[Priority] Scanning priority folder and all subfolders (ID: ${PRIORITY_FOLDER_ID})...`);
+
+        // BFS: collect all subfolder IDs under the priority folder
+        async function getAllFolderIds(rootId) {
+            const folderIds = [rootId];
+            const queue = [rootId];
+            while (queue.length > 0) {
+                const currentId = queue.shift();
+                let subPageToken;
+                do {
+                    const subRes = await drive.files.list({
+                        q: `mimeType = 'application/vnd.google-apps.folder' and '${currentId}' in parents`,
+                        corpora: 'drive',
+                        driveId: driveId,
+                        supportsAllDrives: true,
+                        includeItemsFromAllDrives: true,
+                        fields: 'nextPageToken, files(id, name)',
+                        pageSize: 100,
+                        ...(subPageToken ? { pageToken: subPageToken } : {})
+                    });
+                    for (const folder of subRes.data.files) {
+                        console.log(`[Priority] Found subfolder: ${folder.name} (${folder.id})`);
+                        folderIds.push(folder.id);
+                        queue.push(folder.id);
+                    }
+                    subPageToken = subRes.data.nextPageToken;
+                } while (subPageToken);
             }
-            priorityPageToken = priorityResult.data.nextPageToken;
-        } while (priorityPageToken);
-        console.log(`[Priority] Priority folder complete. Moving to full drive scan...`);
+            return folderIds;
+        }
+
+        const priorityFolderIds = await getAllFolderIds(PRIORITY_FOLDER_ID);
+        console.log(`[Priority] Found ${priorityFolderIds.length} folders to scan in priority tree.`);
+
+        // Process videos in all collected folders
+        for (const folderId of priorityFolderIds) {
+            let priorityPageToken;
+            do {
+                const priorityOptions = {
+                    q: `mimeType contains 'video/' and '${folderId}' in parents`,
+                    corpora: 'drive',
+                    driveId: driveId,
+                    supportsAllDrives: true,
+                    includeItemsFromAllDrives: true,
+                    fields: 'nextPageToken, files(id, name, hasThumbnail)',
+                    pageSize: 100,
+                    ...(priorityPageToken ? { pageToken: priorityPageToken } : {})
+                };
+                const priorityResult = await drive.files.list(priorityOptions);
+                for (const file of priorityResult.data.files) {
+                    jobStatus.total++;
+                    // Skip macOS resource fork sidecar files (._filename) - they contain no video data
+                    if (file.name.startsWith('._')) { jobStatus.skipped++; continue; }
+                    if (file.hasThumbnail) { jobStatus.skipped++; continue; }
+                    console.log(`[Priority] Processing: ${file.name} (ID: ${file.id})`);
+                    await processFileWithRetry(file);
+                }
+                priorityPageToken = priorityResult.data.nextPageToken;
+            } while (priorityPageToken);
+        }
+        console.log(`[Priority] Priority folder tree complete. Moving to full drive scan...`);
+
 
         // ---- FULL SCAN: Process remaining drive files ----
         let pageToken;
