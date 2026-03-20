@@ -30,15 +30,24 @@ async function downloadFileToDisk(fileId) {
             { responseType: 'stream' }
         );
     } catch (err) {
-        // Detect Google API 403 quota error and surface a typed error
+        // Detect Google API 403 quota error thrown synchronously
         const code = err?.response?.status || err?.code;
         if (code === 403) {
-            fs.unlinkSync(tempFilePath); // clean up empty file
+            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
             const quotaErr = new Error('downloadQuotaExceeded');
             quotaErr.isQuotaError = true;
             throw quotaErr;
         }
         throw err;
+    }
+
+    // With responseType:'stream', a 403 resolves (not throws) — check status before piping
+    if (res.status === 403) {
+        dest.destroy();
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        const quotaErr = new Error('downloadQuotaExceeded');
+        quotaErr.isQuotaError = true;
+        throw quotaErr;
     }
 
     return new Promise((resolve, reject) => {
