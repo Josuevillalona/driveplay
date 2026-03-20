@@ -22,10 +22,24 @@ async function downloadFileToDisk(fileId) {
     }
 
     const dest = fs.createWriteStream(tempFilePath);
-    const res = await drive.files.get(
-        { fileId, alt: 'media', supportsAllDrives: true },
-        { responseType: 'stream' }
-    );
+
+    let res;
+    try {
+        res = await drive.files.get(
+            { fileId, alt: 'media', supportsAllDrives: true },
+            { responseType: 'stream' }
+        );
+    } catch (err) {
+        // Detect Google API 403 quota error and surface a typed error
+        const code = err?.response?.status || err?.code;
+        if (code === 403) {
+            fs.unlinkSync(tempFilePath); // clean up empty file
+            const quotaErr = new Error('downloadQuotaExceeded');
+            quotaErr.isQuotaError = true;
+            throw quotaErr;
+        }
+        throw err;
+    }
 
     return new Promise((resolve, reject) => {
         res.data

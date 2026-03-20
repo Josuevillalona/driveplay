@@ -58,16 +58,26 @@ async function startThumbnailBatch() {
                 }
 
                 console.log(`Processing file: ${file.name} (ID: ${file.id})`);
-                try {
-                    const base64Data = await generateThumbnailBase64(file.id);
-                    await uploadThumbnailToDrive(file.id, base64Data);
-                    jobStatus.processed++;
+                let success = false;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        const base64Data = await generateThumbnailBase64(file.id);
+                        await uploadThumbnailToDrive(file.id, base64Data);
+                        jobStatus.processed++;
+                        success = true;
 
-                    // Tiny 100ms breather to prevent locking the Node.js event loop
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                } catch (err) {
-                    console.error(`Failed to generate/upload thumbnail for ${file.id}:`, err.message);
-                    jobStatus.errors++;
+                        // Tiny 100ms breather to prevent locking the Node.js event loop
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        break; // success, stop retrying
+                    } catch (err) {
+                        if (err.isQuotaError && attempt < 3) {
+                            console.warn(`[Quota] Hit downloadQuotaExceeded for ${file.id}. Waiting 60s before retry (attempt ${attempt}/3)...`);
+                            await new Promise(resolve => setTimeout(resolve, 60000));
+                        } else {
+                            console.error(`Failed to generate/upload thumbnail for ${file.id} (attempt ${attempt}):`, err.message);
+                            if (attempt === 3) jobStatus.errors++;
+                        }
+                    }
                 }
             }
             pageToken = result.data.nextPageToken;
