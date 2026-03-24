@@ -81,7 +81,7 @@ async function generateThumbnailBase64Disk(tempFilePath, fileId) {
         });
 
         const command = ffmpeg(tempFilePath)
-            .seekInput(1)
+            .seekInput(5)
             .frames(1)
             .size('640x?')
             .format('image2pipe')
@@ -182,8 +182,8 @@ async function generateThumbnailBase64Stream(fileId, token) {
                 '-probesize', '50M',     // Limit scanning to 50MB to prevent buffering OOM
                 '-analyzeduration', '100M' // Don't buffer entire giant files into memory if MOOV atom is late
             ])
-            // Seek 1 second into the video
-            .seekInput(1)
+            // Seek 5 seconds in to skip black opening frames (slates, exposure ramp-up, leaders)
+            .seekInput(5)
             // We only want to process 1 frame
             .frames(1)
             // Resize to a thumbnail-friendly size, keeping aspect ratio

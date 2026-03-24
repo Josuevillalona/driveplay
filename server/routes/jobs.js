@@ -43,8 +43,8 @@ async function startThumbnailBatch() {
                 break; // success, stop retrying
             } catch (err) {
                 if (err.isQuotaError && attempt < 3) {
-                    console.warn(`[Quota] Hit downloadQuotaExceeded for ${file.id}. Waiting 60s before retry (attempt ${attempt}/3)...`);
-                    await new Promise(resolve => setTimeout(resolve, 60000));
+                    console.warn(`[Quota] Hit downloadQuotaExceeded for ${file.id}. Waiting 5min before retry (attempt ${attempt}/3)...`);
+                    await new Promise(resolve => setTimeout(resolve, 300000));
                 } else {
                     console.error(`Failed to generate/upload thumbnail for ${file.id} (attempt ${attempt}):`, err.message);
                     if (attempt === 3) jobStatus.errors++;
